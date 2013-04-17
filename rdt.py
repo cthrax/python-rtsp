@@ -164,7 +164,7 @@ class RDTClient(RTSPClient):
         header = rmff_header_t()
         try: abstract = sdp['Abstract']
         except KeyError: abstract = ''
-        header.fileheader = rmff_fileheader_t(4 + sdp['StreamCount'])
+        header.fileheader = rmff_fileheader_t(4 + 1)
         try: title = sdp['Title']
         except KeyError: title = ''
         try: author = sdp['Author']
@@ -246,11 +246,12 @@ class RDTClient(RTSPClient):
             reactor.callLater(30, self.heartbeat)
             self.out_file = open(self.factory.filename, 'wb')
             self.header = self.handleSdp(data)
-            self.streamids = [i for i in range(self.header.prop.num_streams)]
+            #self.streamids = [i for i in range(self.header.prop.num_streams)]
+            self.streamids = [1]
             self.subscribe = ''
-            for i,rules in self.streammatches.items():
-                for r in rules:
-                    self.subscribe += 'stream=%s;rule=%s,' % (i,r)
+            #for i,rules in self.streammatches.items():
+            #    for r in rules:
+            #        self.subscribe += 'stream=%s;rule=%s,' % (i,r)
             self.subscribe = self.subscribe[:-1] # Removes trailing comma
             self.out_file.write(self.header.dump())
             self.num_packets = 0

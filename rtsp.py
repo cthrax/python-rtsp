@@ -56,12 +56,18 @@ class RTSPClient(basic.LineReceiver):
 
     session = None # RTSP Session
 
+    sent_options = False
+    sent_describe = False
+    sent_parameter = False
+    sent_bandwidth = False
     sent_setup = False
     sent_play = False
+    sent_teardown = False
 
     def sendCommand(self, command, path):
         """ Sends off an RTSP command
         These appear at the beginning of RTSP headers """
+        print('Sending line: %s %s RTSP/1.0' % (command, path))
         self.sendLine('%s %s RTSP/1.0' % (command, path))
 
     def sendHeader(self, name, value):
@@ -218,7 +224,7 @@ class RTSPClient(basic.LineReceiver):
     def sendNextMessage(self):
         """ Default method handles only the
         bare minimum Setup and Play messages
-        Override this in sub classes to change behavior """
+        Override this in sub classes to change behavior
         if not self.sent_setup:
             self.sent_setup = True
             self.sendSetup()
@@ -229,6 +235,51 @@ class RTSPClient(basic.LineReceiver):
             self.sendPlay()
             self.endHeaders()
             return True
+        return False
+        """
+        """ This method goes in order sending messages to the server:
+        OPTIONS, DESCRIBE, SETUP, SET_PARAMETER, SET_PARAMETER, PLAY
+        Returns True if it sent a packet, False if it didn't """
+        '''
+        if not self.sent_options:
+            self.sent_options = True
+            self.sendOptions()
+            return True
+            '''
+        if not self.sent_describe:
+            self.sent_describe = True
+            target = '%s://%s:%s%s' % (self.factory.scheme,
+                                       self.factory.host,
+                                       self.factory.port,
+                                       self.factory.path)
+            self.sendDescribe(target)
+            return True
+        if not self.sent_setup:
+            self.sent_setup = True
+            target = '%s://%s:%s%s' % (self.factory.scheme,
+                                       self.factory.host,
+                                       self.factory.port,
+                                       self.factory.path)
+            self.sendSetup('%s/track1' % target)
+            return True
+        if not self.sent_play:
+            self.sent_play = True
+            target = '%s://%s:%s%s' % (self.factory.scheme,
+                                       self.factory.host,
+                                       self.factory.port,
+                                       self.factory.path)
+            self.sendPlay(target='%s/' % target)
+            reactor.callLater(30, self.heartbeat)
+            return True
+        if not self.sent_teardown:
+            self.sent_teardown = True
+            target = '%s://%s:%s%s' % (self.factory.scheme,
+                                       self.factory.host,
+                                       self.factory.port,
+                                       self.factory.path)
+            self.sendTeardown(target)
+            return True
+            
         return False
 
     def _handleEndHeaders(self, headers):
@@ -260,6 +311,26 @@ class RTSPClient(basic.LineReceiver):
 
     def handleContentResponse(self, data, content_type=None):
         """ Called when the entire content-length has been received """
+        f = open('sdp.txt', 'w')
+        f.write(data)
+        f.close()
+
+    def heartbeat(self):
+        target = '%s://%s:%s' % (self.factory.scheme,
+                                 self.factory.host,
+                                 self.factory.port)
+        headers = {}
+        headers['User-Agent'] = self.factory.agent
+        headers['PlayerStarttime'] = self.factory.PLAYER_START_TIME
+        headers['CompanyID'] = self.factory.companyID
+        headers['GUID'] = self.factory.GUID
+        headers['RegionData'] = '0'
+        headers['ClientID'] = self.factory.clientID
+        headers['Pragma'] = 'initiate-session'
+        self.sendOptions('*', headers)
+        reactor.callLater(30, self.heartbeat)
+        #print('Sent heartbeat')
+        
 
     def handleResponseEnd(self, data):
         """ Called when length of data has been received """
@@ -320,6 +391,9 @@ class RTSPClient(basic.LineReceiver):
         """ Tells the server to play the stream for you """
         headers['Range'] = 'npt=%s' % range
         self.sendMethod('PLAY', target, headers)
+        
+    def sendTeardown(self, target='*', headers=None):
+        self.sendMethod('TEARDOWN', target, headers)
 
 
 
@@ -335,15 +409,18 @@ class RTSPClientFactory(client.HTTPClientFactory):
 
     agent = 'RealMedia Player Version 6.0.9.1235 (linux-2.0-libc6-i386-gcc2.95)'
     clientID = 'Linux_2.4_6.0.9.1235_play32_RN01_EN_586'
+    
+    client = None
+    
 
     def __init__(self, url, filename, timeout=0, agent=None, *args, **kwargs):
         self.timeout = timeout
         if agent is None:
             agent = self.agent
         self.filename = filename
-
         self.data_received = 0
 
+        print("New client %s" % url)
         self.setURL(url)
         self.waiting = 1
         self.deferred = defer.Deferred()
@@ -365,11 +442,11 @@ class RTSPClientFactory(client.HTTPClientFactory):
             self.port = 554
 
     def buildProtocol(self, addr):
-        p = protocol.ClientFactory.buildProtocol(self, addr)
+        client = protocol.ClientFactory.buildProtocol(self, addr)
         if self.timeout:
-            timeoutCall = reactor.callLater(self.timeout, p.timeout)
+            timeoutCall = reactor.callLater(self.timeout, client.timeout)
             self.deferred.addBoth(self._cancelTimeout, timeoutCall)
-        return p
+        return client
 
     def success(self, result):
         if self.waiting:

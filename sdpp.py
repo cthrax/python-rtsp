@@ -117,6 +117,8 @@ class SDPParser:
             self.media_descriptions.append(self.last_desc)
         elif type == 'b':
             self.last_desc.b.append(value)
+        elif type == 'c':
+            print ("Connection info: %s" % value)
         else:
             # Need to add email and phone
             raise TypeError('Unknown type: %s' % type)
@@ -135,6 +137,8 @@ class SdpplinMediaDesc(SDPMediaDesc):
         return [(key,self.attributes[key]) for key in self.attributes]
 
     def __getitem__(self, name):
+        try: self.attributes[name]
+        except KeyError: self.attributes[name] = ''
         return self.attributes[name]
 
     def __init__(self, media_desc):
@@ -147,7 +151,13 @@ class SdpplinMediaDesc(SDPMediaDesc):
         for item in media_desc.a:
             name, value = _parse_sdpplin_line(item)
             if name == 'control':
-                self.attributes[value.split('=')[0]] = int(value.split('=')[1])
+                print("Value %s" % value)
+                print(self.attributes)
+                if (value.find('=') != -1):
+                    self.attributes[value.split('=')[0]] = int(value.split('=')[1])
+                else:
+                    self.attributes[name] = value
+                
             if name == 'length':
                 self.duration = int(float(value.split('=')[1]) * 1000)
             self.attributes[name] = value
@@ -184,4 +194,6 @@ class Sdpplin(SDPParser):
         return [(key,self.attributes[key]) for key in self.attributes]
 
     def __getitem__(self, name):
+        try: self.attributes[name]
+        except KeyError: self.attributes[name] = ''
         return self.attributes[name]
